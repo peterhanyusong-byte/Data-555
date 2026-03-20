@@ -1,0 +1,110 @@
+---
+title: "Capstone_Report"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
+    theme: simplex
+---
+
+``` {r}
+library(leaflet)
+library(tigris)
+library(sf)
+library(scales) 
+library(dplyr)
+library(plotly)
+library(ggplot2)
+
+here::i_am("codes/04_mockups02.R")
+data_final_cleaned <- readRDS(here::here("outputs", "01_dataclean.Rds"))
+options(tigris_use_cache = TRUE)
+
+# --- Prepare Data ---
+ga_zctas <- zctas(cb = TRUE, year = 2010, starts_with = c("30", "31"), class = "sf")
+zip_summary <- data_final_cleaned %>%
+  group_by(zip_code) %>%
+  summarize(avg_score = mean(score, na.rm = TRUE), total_cases = n()) %>%
+  mutate(zip_code = as.character(zip_code))
+
+map_data <- ga_zctas %>%
+  left_join(zip_summary, by = c("ZCTA5" = "zip_code")) %>%
+  filter(!is.na(avg_score))
+
+score_pal <- colorNumeric(palette = "YlOrRd", domain = map_data$avg_score)
+preterm_pal <- colorFactor(palette = c("blue", "red"), domain = data_final_cleaned$preterm)
+```
+
+# Spatial Analysis
+### Figure 1: Geographic Clustering of Preterm Births and Neighborhood SES
+
+```{r}
+leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    data = map_data,
+    fillColor = ~score_pal(avg_score),
+    fillOpacity = 0.6,
+    weight = 1,
+    color = "white",
+    label = ~paste0("Zip: ", ZCTA5, " | Avg Score: ", round(avg_score, 2)),
+    highlightOptions = highlightOptions(weight = 3, color = "black", bringToFront = FALSE),
+    group = "SES Score (Area)"
+  ) %>%
+  addCircleMarkers(
+    data = data_final_cleaned,
+    lng = ~long, lat = ~lat,
+    radius = 4,
+    fillColor = ~preterm_pal(preterm),
+    stroke = FALSE, 
+    fillOpacity = 0.8,
+    label = ~paste0("Status: ", ifelse(preterm == "1", "Preterm", "Full-term")),
+    group = "Individual Cases (Points)",
+    clusterOptions = markerClusterOptions() 
+  ) %>%
+  addLayersControl(
+    overlayGroups = c("SES Score (Area)", "Individual Cases (Points)"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(pal = score_pal, values = map_data$avg_score, title = "Avg SES Score", position = "bottomright") %>%
+  addLegend(pal = preterm_pal, values = data_final_cleaned$preterm, title = "Preterm Status", position = "bottomleft")
+```
+
+### Key take-away: 
+This interactive map reveals a significant spatial correlation between neighborhood socioeconomic status (SES) and preterm birth density in the Atlanta metropolitan area. High-risk clusters (red markers) are predominantly located in regions with lower average SES scores, suggesting that environmental and economic factors may influence maternal outcomes. The clustering feature allows users to explore data density from a state-wide overview down to specific community zip codes.
+
+# Clinical Trends
+### Figure 2: Correlation Between Gestational Age (weeks) and Birth Weight (oz) by Race
+
+```{r}
+p2_improved <- ggplot(data_final_cleaned, aes(x = gest_age, y = birth_weight_oz, 
+                                              color = race,
+                                              text = paste("ID:", encounter_nbr,
+                                                           "<br>Gest. Age:", round(gest_age, 1), "weeks", 
+                                                           "<br>Birth Weight:", round(birth_weight_oz, 2), 
+                                                           "<br>Obesity:", obesity,
+                                                           "<br>Preterm:", ifelse(preterm == "1", "Yes", "No")))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", se = FALSE, color = "black") + 
+  facet_wrap(~race) + 
+  theme_minimal() +
+  labs(title = "Gestational Age vs. Birth Weight by Race",
+       x = "Gestational Age (weeks)",
+       y = "Birth Weight (oz)",
+       color = "Race Group")
+
+chart2_interactive_improved <- ggplotly(p2_improved, tooltip = "text")
+chart2_interactive_improved
+```
+
+### Key take-away: 
+Analysis across racial groups shows a consistent positive linear relationship where increased gestational age corresponds to higher birth weights. However, variations in the regression slopes indicate that certain racial cohorts may experience different growth trajectories. The tooltips further allow researchers to examine how individual clinical risks, such as maternal obesity, distribute along these weight curves.
+
+# Data Description
+### Dataset Overview and Methodology
+About the Data: 
+
+The dataset utilized in this dashboard originates from clinical birth records in Georgia, specifically focusing on maternal outcomes in the Atlanta metropolitan area. It comprises a sample of several thousand birth encounters collected between 2020 and 2022 to investigate racial disparities in birth outcomes. The data was systematically compiled from hospital electronic health records and includes diverse maternal cohorts categorized by socioeconomic status and clinical risk factors. The study population specifically targets maternal-infant pairs with recorded geographic coordinates and complete clinical histories. All individual-level data has been de-identified to maintain patient confidentiality and adhere strictly to medical research ethics.
+
+Project Importance: 
+
+This dashboard identifies high-risk geographic clusters and clinical disparities in preterm births across Georgia, providing actionable spatial insights for healthcare providers to target interventions. By visualizing the intersection of socioeconomic status and maternal health outcomes, it supports evidence-based policymaking aimed at reducing racial inequities in infant health.
