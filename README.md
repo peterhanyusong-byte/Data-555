@@ -1,1 +1,0 @@
-This dashboard identifies high-risk geographic clusters and clinical disparities in preterm births across Georgia, providing actionable spatial insights for healthcare providers to target interventions. By visualizing the intersection of socioeconomic status and maternal health outcomes, it supports evidence-based policymaking aimed at reducing racial inequities in infant health.
